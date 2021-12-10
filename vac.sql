@@ -1,7 +1,7 @@
 
 select a.Recip_State as ID, sum(a.Series_Complete_Yes) as vac, b.population, round(cast(sum(a.Series_Complete_Yes) as float)/cast(b.population as float), 4) as vac_pct from Vaccination a
 join geo_states b on a.Recip_State = b.abv
-where date = '2021-01-31' 
+where date = '2021-10-16' 
 group by Recip_State
 
 select * from Vaccination

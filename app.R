@@ -97,6 +97,37 @@ tabsetPanel(
            mainPanel(plotOutput('myplot')
                      )
            )
+  ),
+  tabPanel('Test',
+           sidebarLayout(
+             sidebarPanel(
+               helpText('A Wilcox test has been performed againest vaccinated group and unvaccinated group.'),
+               selectInput('select_test',
+                           label = "Select data to perform a test:",
+                           choices = c('Case', 'Death'),
+                           selected = "Case"
+                           )
+             ),
+             mainPanel(verbatimTextOutput('test'))
+           )
+           ),
+  tabPanel('Rates of Covid-19 Outcomes',
+           sidebarLayout(
+             sidebarPanel(
+               selectInput("var_type", 
+                           label = "Choose a variable to display",
+                           choices = c('Overall' ,'Age Group'),
+                           selected = 'Overall'),
+               selectInput("var_rate", 
+                           label = "Choose a variable to display",
+                           choices = c('Cases' ,'Death'),
+                           selected = 'Cases')
+             ),
+             mainPanel(plotOutput('rate_plot')
+               
+             )
+           )
+    
   )
 )
 )
@@ -199,7 +230,7 @@ where date = ", input$range2,
     
     states <- inner_join(states, data_, by = c('ID'))
     
-    popup <- paste0(states$ID, "fully vaccinated:", states$vac)
+    popup <- paste0(states$ID, ":<br>", "fully vaccinated: ", states$vac)
     pal =colorBin(
                     palette = "Greens",
                     domain = states$cases,
@@ -260,6 +291,59 @@ group by a.state, strftime('%Y-%m', submission_date)")
     }else{
     ggplot(data = data_st_long(), aes(x=Month,y=value, colour=option, group=option)) + geom_point() + geom_line() + scale_color_hue(label=names(vac_lab[which(vac_lab %in% input$opt)]))
     }
+  })
+  plot_data1 = dbGetQuery(conn=db, statement = "select * from plot_data
+      where Month = '2021-10' and population is not NULL and vac_pop != 0 and vac_pop>0.5")
+  
+  plot_data2 = dbGetQuery(conn=db, statement = "select * from plot_data
+      where Month = '2021-10' and population is not NULL and vac_pop != 0 and vac_pop<=0.5")
+  test_func = reactive({
+    if(input$select_test=='Case'){
+      t = wilcox.test(plot_data1$cases_pop,plot_data2$cases_pop, alternative='less')
+    }
+      else{
+        t= wilcox.test(plot_data1$death_pop,plot_data2$death_pop, alternative='less')
+      }
+    return(t)
+  })
+  output$test = renderPrint({test_func()})
+  
+  rate_plot = reactive({
+    if(input$var_type=='Overall'){
+    case_rate = dbGetQuery(conn=db, statement = "select month, MMWRweek, Weekdate, Vaccinatedwithoutcome, Unvaccinatedwithoutcome from Rates
+        where Agegroup = 'all_ages_adj' and Vaccineproduct = 'all_types' and outcome = 'case'")
+    
+    
+    death_rate = dbGetQuery(conn=db, statement = "select month, MMWRweek, Weekdate, Vaccinatedwithoutcome, Unvaccinatedwithoutcome from Rates
+        where Agegroup = 'all_ages_adj' and Vaccineproduct = 'all_types' and outcome = 'death'")
+    data_ = switch(input$var_rate,
+                   'Cases'=case_rate,
+                   'Death'=death_rate
+                   )
+    data_long = gather_(data_, 'option', 'value', c('Vaccinatedwithoutcome', 'Unvaccinatedwithoutcome'))
+    
+    ggplot(data = data_long) + geom_line(aes(x=MMWRweek, y=value, colour=option), size=1) +
+      scale_x_continuous(breaks=c(20, 30 , 40),labels=c('May-22', 'JUL-31', 'SEP-30')) +
+      labs(y='Number of Outcomes', colour='Vaccination statue')
+    }else if(input$var_type=='Age Group'){
+      case_rate = dbGetQuery(conn=db, statement = "select month, MMWRweek, Weekdate, Agegroup, Vaccinatedwithoutcome, Unvaccinatedwithoutcome from Rates
+where Agegroup != 'all_ages_adj' and Vaccineproduct = 'all_types' and outcome = 'case'")
+      death_rate = dbGetQuery(conn=db, statement = "select month, MMWRweek, Weekdate, Agegroup, Vaccinatedwithoutcome, Unvaccinatedwithoutcome from Rates
+where Agegroup != 'all_ages_adj' and Vaccineproduct = 'all_types' and outcome = 'death'")
+      data_ = switch(input$var_rate,
+                     'Cases'=case_rate,
+                     'Death'=death_rate
+                     )
+      data_long = gather_(data_, 'option', 'value', c('Vaccinatedwithoutcome', 'Unvaccinatedwithoutcome'))
+      ggplot(data = data_long) + geom_line(aes(x=MMWRweek, y=value, colour=option, linetype=Agegroup), size=1) +
+        labs(linetyple='Age Group', colour='Vaccinated statue', y = 'Number of Outcomes') + 
+        scale_x_continuous(breaks=c(20, 30 , 40),labels=c('May-22', 'JUL-31', 'SEP-30'))
+      
+    }
+  })
+  
+  output$rate_plot = renderPlot({
+    rate_plot()
   })
 
 }
